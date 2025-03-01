@@ -9,6 +9,8 @@
 #include <thrust/iterator/reverse_iterator.h>
 
 #define maxSize 10000000
+#define batchsize 10000000
+#define NRUNS 5
 #define block_size 1024
 
 using namespace std;
@@ -433,18 +435,33 @@ class Map{
 
 
 };
+    double rtclock(){
+        struct timezone Tzp;
+        struct timeval Tp;
+        int stat;
+        stat = gettimeofday(&Tp, &Tzp);
+        if (stat != 0) printf("Error return from gettimeofday: %d", stat);
+        return(Tp.tv_sec + Tp.tv_usec * 1.0e-6);
+    }
+
+    void printtime(const char *str, double starttime, double endtime){
+        printf("%s%3f seconds\n", str, endtime - starttime);
+    }
+
 
 
  int main(){
 
+ for (int ii = 0; ii < NRUNS; ++ii) {
+   cout << "Run " << ii << "/" << (NRUNS - 1) << "-----" << endl;
    Map mp;
 
-   int insertSize = 10;
+   int insertSize = maxSize;
    thrust::host_vector<thrust::host_vector<int>> insertEl(insertSize, thrust::host_vector<int>(2,0));
     
 
 
-   /*Start of Dummy Input*/
+   /*Start of Dummy Input
    insertEl[0][0] = 59;
    insertEl[0][1] = 6;
    // workDone[0] = 0;
@@ -459,23 +476,28 @@ class Map{
    insertEl[2][1] = 9;
    // workDone[2] = 0;
    // searchDone[2] = 0;
+   */
 
-   cout << "111\n";
-   for(int i=3 ; i<insertSize ; i++){
-       insertEl[i][0] = i;
-       insertEl[i][1] = i+7;
+   for(int i=0 ; i<insertSize ; i++){
+       insertEl[i][0] = random() % (10*maxSize);
+       insertEl[i][1] = random() % (10*maxSize);
        // workDone[i] = 0;	//This is important
        // searchDone[i] = 0;
    }
-   // /*End of Dummy Input*/
 
   
    // //cout<<"size = "<<sizeof(insertEl)/sizeof(insertEl[0]);
    // int sz = sizeof(insertEl)/sizeof(insertEl[0]);
-   int sz=10;
-   mp.insertel(sz, insertEl);
+   int sz=batchsize;
+   double starttime, endtime;
 
-   insertEl[0][0] = 58;
+   cout << "Inserting Number of Elements = " << sz << endl;
+   starttime = rtclock();
+   mp.insertel(sz, insertEl);
+   endtime = rtclock();
+   printtime("Insert ", starttime, endtime);
+
+   /*insertEl[0][0] = 58;
    insertEl[0][1] = 6;
    // workDone[0] = 0;
    // searchDone[0] = 0;
@@ -499,10 +521,12 @@ class Map{
    }
 
    mp.insertel(sz, insertEl);
+	*/
 
-   sz = 3;
+   sz = batchsize;
    vector<vector<int>> searchEl(sz, vector<int>(2,0));
     
+   /*
    searchEl[0][0] = 58;
    searchEl[0][1] = 6;
    // workDone[0] = 0;
@@ -517,12 +541,15 @@ class Map{
    searchEl[2][1] = 9;
   
    cout << "333\n";
-   // for(int i=3 ; i<insertSize ; i++){
-   //     insertEl[i][0] = i;
-   //     insertEl[i][1] = i+7;
-   //     // workDone[i] = 0;	//This is important
-   //     // searchDone[i] = 0;
-   // }
+   */
+   /*for(int i=0 ; i<insertSize ; i++){
+        searchEl[i][0] = random() % (10 * maxSize);
+        searchEl[i][1] = random() % (10 * maxSize);
+        // workDone[i] = 0;	//This is important
+        // searchDone[i] = 0;
+   }
+   mp.searchKey(sz, searchEl);
+   */
 
    // mp.search_pair(sz, searchEl);
 
@@ -537,23 +564,34 @@ class Map{
 
    // mp.delete_pair(sz, searchEl);
 
-   sz = 2;
+   //sz = 2;
 
-   cout << "555\n";
    thrust::host_vector<int> skey(sz,0);
 
-   skey[0] = 3;
-   skey[1] = 4;
+   for (int i = 0; i < sz; ++i) {
+   	skey[i] = random() % (10 * maxSize);
+   	//skey[1] = 4;
+   }
+   cout << "Searching Number of Elements = " << sz << endl;
+   starttime = rtclock();
+   mp.searchKey(sz, skey);
+   endtime = rtclock();
+   printtime("Search ", starttime, endtime);
 
+
+   cout << "Deleting Number of Elements = " << sz << endl;
+   starttime = rtclock();
    mp.deleteKey(sz, skey);
+   endtime = rtclock();
+   printtime("Delete ", starttime, endtime);
 
-   cout << "444\n";
+
+   /*cout << "444\n";
    skey[0] = 58;
    skey[1] = 59;
-
-   mp.searchKey(sz, skey);
-
-   cout << "666\n";
+	*/
+   cout << endl;
+	}
 
    return 0;
  }
