@@ -2,7 +2,7 @@
 
 # Compiler and flags
 NVCC = nvcc
-CXXFLAGS = -O3 -arch=native  # Change sm_35 to your GPU architecture if needed
+CXXFLAGS = -O3 -arch=native
 
 # Target executable
 TARGET = reduction.out
