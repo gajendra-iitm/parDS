@@ -62,14 +62,15 @@ int main(int argc, char **argv) {
 
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "2^" << ii << "," << sum<< "," << elapsed.count() << ",";
-
-    auto sstart = std::chrono::high_resolution_clock::now();
-    sum = seqReduceSum(input, N);
-    auto eend = std::chrono::high_resolution_clock::now();
-
-
-    auto eelapsed =  std::chrono::duration_cast<std::chrono::seconds>(eend - sstart);
-    std::cout << "" << sum << "," << elapsed.count() << " s" << std::endl;
+    
+    // SEQREDUCE
+    // auto sstart = std::chrono::high_resolution_clock::now();
+    // sum = seqReduceSum(input, N);
+    // auto eend = std::chrono::high_resolution_clock::now();
+    // auto eelapsed =  std::chrono::duration_cast<std::chrono::seconds>(eend - sstart);
+    // std::cout << "" << sum << "," << elapsed.count() << " s" << std::endl;
+    
+     std::cout << std::endl;
   }
   delete[] input;
   return 0;
