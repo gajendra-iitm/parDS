@@ -13,6 +13,9 @@ SRC = reduction.cu
 # Default rule
 all: $(TARGET)
 
+omp:
+	
+
 # Rule to build the target executable
 $(TARGET): $(SRC)
 	$(NVCC) $(CXXFLAGS) -o $(TARGET) $(SRC)

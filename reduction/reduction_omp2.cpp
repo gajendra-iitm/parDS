@@ -1,4 +1,4 @@
-// g++ -Wall -o "reduction_omp2.out" "reduction_omp2.cpp"  -O3 -fopenmp 
+// g++ -Wall -o "reduction_omp2.out" "reduction_omp2.cpp"  -O3 -fopenmp
 #include <omp.h>
 
 #include <chrono>
@@ -43,36 +43,39 @@ void randomInputs(int *input, int N) {
   }
 }
 int main(int argc, char **argv) {
-  int pow = 21;
+  int pow = 20;
   int N = 1 << pow;
   if (argc > 1) {
     pow = atoi(argv[1]);
     N = 1 << pow;
   }
   // std::cout<< "N: " << N  << std::endl;
-  int *input = new int[N];
+  // int *input = new int[N]; //seqfault for 2^30.
+  int *input = (int *)malloc(sizeof(int) * N); // still seq faults
   randomInputs(input, N);
 
   std::cout << "pow:2^x,parSum,Time(s),seqSum,Time(s)" << std::endl;
-  for (int ii = 10; ii < pow; ii += 5) {
+  for (int ii = 10; ii < pow+1; ii += 5) {
     N = 1 << ii;
+    
+    //PARREDUCE
     auto start = std::chrono::high_resolution_clock::now();
     long long int sum = parallelReduce1(input, N);
     auto end = std::chrono::high_resolution_clock::now();
-
     std::chrono::duration<double> elapsed = end - start;
-    std::cout << "2^" << ii << "," << sum<< "," << elapsed.count() << ",";
-    
+    std::cout << "2^" << ii << "," << sum << "," << elapsed.count() << ",";
+
     // SEQREDUCE
-    // auto sstart = std::chrono::high_resolution_clock::now();
-    // sum = seqReduceSum(input, N);
-    // auto eend = std::chrono::high_resolution_clock::now();
-    // auto eelapsed =  std::chrono::duration_cast<std::chrono::seconds>(eend - sstart);
-    // std::cout << "" << sum << "," << elapsed.count() << " s" << std::endl;
-    
-     std::cout << std::endl;
+    start = std::chrono::high_resolution_clock::now();
+    sum = seqReduceSum(input, N);
+    end = std::chrono::high_resolution_clock::now();
+    elapsed = end - start;
+    std::cout << "" << sum << "," << elapsed.count() << " s" ;
+
+    std::cout << std::endl;
   }
-  delete[] input;
+  // delete[] input;
+  free(input);
   return 0;
 }
 
