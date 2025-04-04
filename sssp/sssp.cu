@@ -136,14 +136,13 @@ static vector<int> cpuSSSP(const ECLgraph& g){
 // INIT KERNEL
 __global__ void kernelInit(int N, int src, int *minDist, int* parent){
 	unsigned id = threadIdx.x + blockDim.x * blockIdx.x;	
-  if(id > N) return;				
+  if(id >= N) return;				
 
 	minDist[id]=INT_MAX/2;
 	parent[id] = -1;
 	
 	if(id == src){
 		minDist[id]=0;		
-		minDist[0]=0;
 	}	
 }
 
@@ -193,9 +192,11 @@ static int* gpuSSSP(const ECLgraph& g){
   cudaMalloc((void**)&d_minDist, g.nodes * sizeof(int));
   int* const h_minDist = new int [g.nodes];
   
+  // Optional Out
   int* d_parent = nullptr;
   cudaMalloc((void**)&d_parent, g.nodes * sizeof(int));
   
+  // EXTRAS
   bool *d_modified;
   cudaMalloc((void**)&d_modified,   sizeof(bool));
   bool *modified = new bool[1];
@@ -231,7 +232,7 @@ static int* gpuSSSP(const ECLgraph& g){
   printf("FPT GPU SSSP. DEV: %12.9f s\n", runtime);
    
 
-  cudaMemcpy(h_minDist, d_minDist, g.edges * sizeof(bool), cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_minDist, d_minDist, g.node * sizeof(int), cudaMemcpyDeviceToHost);
   CheckCuda(__LINE__);
   
   
@@ -245,6 +246,7 @@ static int* gpuSSSP(const ECLgraph& g){
 }
 
 
+// d1 and d2 vec of int
 void verify0(const ECLgraph& g,  vector <int> &d1,vector <int> &d2){
 // void verify1(const ECLgraph& g, int* d1, int* d2){
    int misMatch = 0;
@@ -262,16 +264,17 @@ void verify0(const ECLgraph& g,  vector <int> &d1,vector <int> &d2){
     printf("all good\n\n");
   }
 } 
+// d1 vec of int and d2 int*
 void verify2(const ECLgraph& g, vector <int> &d1, int* d2){
    int misMatch = 0;
   
   for (int j = 0; j < g.nodes; j++) {  
     if(d1[j] != d2[j]){
       misMatch++;
-      //printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
+      printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
     }
-    if(j < 10)  
-    printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]); // lets print only 10. //g.nodes
+    // if(j < 10)  
+    // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]); // lets print only 10. //g.nodes
   }
     if (misMatch!=0) {
     printf("ERROR: results differ!\n\n");
