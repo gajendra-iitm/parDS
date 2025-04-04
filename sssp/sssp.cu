@@ -1,9 +1,5 @@
-// nvcc -o "file.out" "file.cu" -O3
+// nvcc -o "sssp.out" "sssp.cu" -O3 -arch=native
 
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-// Author: Rajesh Pandian M | mrprajesh.co.in
-//  START: Thu,03-Apr-2025,03:48:39 IST
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #include <climits>
 #include <algorithm>
 #include <tuple>
@@ -146,7 +142,7 @@ __global__ void kernelInit(int N, int src, int *minDist, int* parent){
 	}	
 }
 
-// FPT SSSP KERNEL
+// FPT SSSP KERNEL. V3
 __global__ void csrKernelBellmanFordMoore(int N, int M, const int *d_nindex, const int* d_nlist, const int* d_eweight,
 	bool *modified,
 	int *minDist, 
@@ -157,6 +153,47 @@ __global__ void csrKernelBellmanFordMoore(int N, int M, const int *d_nindex, con
 		int u = id;   
 		int end= d_nindex[u+1];
 		for(int i=d_nindex[u]; i< end; i++){ 
+			int v = d_nlist[i];
+			/// relax
+			int newDist =  minDist[u]+ d_eweight[i];
+			if(newDist < minDist[v]){ //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+	}
+					
+}
+
+// SSSP V4
+__global__ void csrKernelBellmanFordMoore2(int N, int M, const int *d_nindex, const int* d_nlist, const int* d_eweight,
+	bool *modified,
+	int *minDist, 
+  int *parent // not req
+  ){
+	unsigned id = threadIdx.x + blockDim.x * blockIdx.x;
+	if(id < N){	
+		int u = id;   
+		int end= d_nindex[u+1];
+		for(int i=d_nindex[u]; i< end; i++){ 
+			int v = d_nlist[i];
+			/// relax
+			int newDist =  minDist[u]+ d_eweight[i];
+			if(newDist < minDist[v]){ //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    for(int i=d_nindex[u]; i< end; i++){ 
+			int v = d_nlist[i];
+			/// relax
+			int newDist =  minDist[u]+ d_eweight[i];
+			if(newDist < minDist[v]){ //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    for(int i=d_nindex[u]; i< end; i++){ 
 			int v = d_nlist[i];
 			/// relax
 			int newDist =  minDist[u]+ d_eweight[i];
@@ -214,9 +251,9 @@ static int* gpuSSSP(const ECLgraph& g){
   do {
       modified[0] = false;
       cudaMemcpy(d_modified, modified, sizeof(bool), cudaMemcpyHostToDevice);
-      csrKernelBellmanFordMoore<<<blocks, ThreadsPerBlock>>>( g.nodes, g.edges, d_nindex, d_nlist, d_eweight,
+      csrKernelBellmanFordMoore2<<<blocks, ThreadsPerBlock>>>( g.nodes, g.edges, d_nindex, d_nlist, d_eweight, //inputs
                                                        d_modified,                        // fixed pt var
-                                                       d_minDist, d_parent                         // these are outputs
+                                                       d_minDist, d_parent                // these are outputs
                                                        );
 
       
@@ -232,7 +269,7 @@ static int* gpuSSSP(const ECLgraph& g){
   printf("FPT GPU SSSP. DEV: %12.9f s\n", runtime);
    
 
-  cudaMemcpy(h_minDist, d_minDist, g.node * sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpy(h_minDist, d_minDist, g.nodes * sizeof(int), cudaMemcpyDeviceToHost);
   CheckCuda(__LINE__);
   
   
@@ -301,11 +338,11 @@ int main(int argc, char *argv[]){
   const int SMs = deviceProp.multiProcessorCount;
   const int mTpSM = deviceProp.maxThreadsPerMultiProcessor;
   printf("GPU: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n\n", deviceProp.name, SMs, mTpSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);  fflush(stdout);
-  const int blocks = SMs * (mTpSM / ThreadsPerBlock);
+  //const int blocks = SMs * (mTpSM / ThreadsPerBlock);
   
-  // Two CPU SSSP
-  // int* dij_cpu_MinDist = cpuSSSP(g); // Seqfult
-  vector<int> dij_cpu_MinDist = cpuSSSP(g); // Seqfult
+  // Two diff CPU SSSP Implementation
+  // int* dij_cpu_MinDist = cpuSSSP(g); // Seqfault
+  vector<int> dij_cpu_MinDist = cpuSSSP(g); 
   vector<int>fpt_cpu_MinDist = dijkstra(g);
   
   // GPU SSSP
