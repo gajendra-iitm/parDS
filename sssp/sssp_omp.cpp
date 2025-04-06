@@ -1,4 +1,5 @@
-// nvcc -o "sssp.out" "sssp.cu" -O3 -arch=native
+// g++ -O3 sssp_omp.cpp -o sssp_omp.out -fopenmp && ./sssp_omp.out inputs/USA-road-d.NY.egr
+
 
 #include <climits>
 #include <algorithm>
