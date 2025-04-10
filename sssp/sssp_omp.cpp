@@ -1,6 +1,7 @@
 // g++ -O3 sssp_omp.cpp -o sssp_omp.out -fopenmp && ./sssp_omp.out inputs/USA-road-d.NY.egr
 
 
+#include <atomic>
 #include <climits>
 #include <algorithm>
 #include <tuple>
@@ -133,6 +134,8 @@ static vector<int> cpuSSSP(const ECLgraph& g){
 
 #include <omp.h>
 
+//Taking more time vs seq
+/*
 static vector<int> cpuParSSSP(const ECLgraph& g) {
   vector<int> minDist(g.nodes, INT_MAX / 2);
   vector<int> parent(g.nodes, -1);
@@ -174,6 +177,84 @@ static vector<int> cpuParSSSP(const ECLgraph& g) {
 
     k++;
   } while (modified);
+
+  cout << k << " iterations of " << g.nodes - 1 << endl;
+  const double runtime = timer.stop();
+  printf("Fpt Par SSSP. Host: %12.9f s\n", runtime);
+
+  return minDist;
+}
+*/
+
+// from startplat util
+template<typename T>
+inline void atomicMin(T* targetVar, T update_val) { 
+  T oldVal, newVal;
+  do {
+    oldVal = *targetVar;
+    newVal = std::min(oldVal,update_val);
+    if (oldVal == newVal) 
+      break;
+  }while ( __sync_val_compare_and_swap(targetVar, oldVal, newVal) == false);
+}
+
+
+// from StarPlat
+static vector<int> cpuParSSSP(const ECLgraph& g) {
+  vector<int> minDist(g.nodes, INT_MAX / 2); //mininum distance
+  vector<bool> modified(g.nodes, false);
+  vector<bool> modified_nxt(g.nodes, false);
+  //vector<int> parent(g.nodes, -1);
+    
+
+  int src = 0;
+  // parent[src] = 0;
+  minDist[src] = 0;
+  modified[src] = true;
+
+  CPUTimer timer;
+  timer.start();
+
+  bool finished;
+  int k = 0;
+
+  do {
+    finished = true;
+    #pragma omp parallel
+    {
+      #pragma omp for
+      for (int v = 0; v < g.nodes; v++) 
+      {
+        if(modified[v] == true ){
+          for (int edge = g.nindex[v]; edge < g.nindex[v+1]; edge++) { 
+            int nbr = g.nlist[edge] ;
+            int e = edge;
+            int dist_new = minDist[v] + g.eweight[e];
+            bool modified_new = true;
+            
+            if(minDist[nbr] > dist_new)  {
+              int oldValue = minDist[nbr];
+              atomicMin(&minDist[nbr],dist_new);
+             
+              if( oldValue > minDist[nbr]) {
+                modified_nxt[nbr] = modified_new;
+                finished = false ;
+                
+              }
+            
+            }
+          }
+        }
+      }
+      #pragma omp for
+      for (int v = 0; v < g.nodes; v ++) 
+      { modified[v] =  modified_nxt[v] ;
+        modified_nxt[v] = false ;
+      }
+    }
+      
+    k++;
+  } while (!finished);
 
   cout << k << " iterations of " << g.nodes - 1 << endl;
   const double runtime = timer.stop();
@@ -342,11 +423,13 @@ static int* gpuSSSP(const ECLgraph& g){
 void verify0(const ECLgraph& g,  vector <int> &d1,vector <int> &d2){
 // void verify1(const ECLgraph& g, int* d1, int* d2){
    int misMatch = 0;
-  
-  for (int j = 0; j < g.nodes; j++) {  // lets print only 10. //g.nodes
+  cout << "N: " << g.nodes << endl;
+  for (int j = 0, end = g.nodes; j < end; j++) {  // lets print only 10.   //g.nodes
+    
     if(d1[j] != d2[j]){
       misMatch++;
       printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
+      // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
     }
       
   }
@@ -403,7 +486,7 @@ int main(int argc, char *argv[]){
   // GPU SSSP
   // int* gpu_MinDist = gpuSSSP(g);
   
-  printf("dij == fpt\n");
+  printf("dij == fpt_omp\n");
   verify0(g,fpt_cpu_MinDist,omp_cpu_MinDist);
   
   // printf("fptcpu == fptgpu\n");
