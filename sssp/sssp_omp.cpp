@@ -200,21 +200,35 @@ inline void atomicMin(T* targetVar, T update_val) {
 
 
 // from StarPlat
-static vector<int> cpuParSSSP(const ECLgraph& g) {
-  vector<int> minDist(g.nodes, INT_MAX / 2); //mininum distance
-  vector<bool> modified(g.nodes, false);
-  vector<bool> modified_nxt(g.nodes, false);
+
+static int* cpuParSSSP(const ECLgraph& g) {
+  // vector<int> minDist(g.nodes, INT_MAX / 2); //mininum distance
+  // vector<bool> modified(g.nodes, false);
+  // vector<bool> modified_nxt(g.nodes, false);
   //vector<int> parent(g.nodes, -1);
-    
+  
+  int* minDist=new int[g.nodes];
+  bool* modified=new bool[g.nodes];
+  bool* modified_nxt=new bool[g.nodes];
+  
+  CPUTimer timer;
+  timer.start();
+
+  
+  #pragma omp parallel for
+  for (int t = 0; t < g.nodes; t++) 
+  {
+    minDist[t] = INT_MAX;
+    modified[t] = false;
+    modified_nxt[t] = false;
+  }  
 
   int src = 0;
   // parent[src] = 0;
   minDist[src] = 0;
   modified[src] = true;
 
-  CPUTimer timer;
-  timer.start();
-
+  
   bool finished;
   int k = 0;
 
@@ -422,7 +436,7 @@ static int* gpuSSSP(const ECLgraph& g){
 // d1 and d2 vec of int
 void verify0(const ECLgraph& g,  vector <int> &d1,vector <int> &d2){
 // void verify1(const ECLgraph& g, int* d1, int* d2){
-   int misMatch = 0;
+  int misMatch = 0;
   cout << "N: " << g.nodes << endl;
   for (int j = 0, end = g.nodes; j < end; j++) {  // lets print only 10.   //g.nodes
     
@@ -480,14 +494,16 @@ int main(int argc, char *argv[]){
   
   // Two diff CPU SSSP Implementation
   // int* dij_cpu_MinDist = cpuSSSP(g); // Seqfault
+  
   vector<int> fpt_cpu_MinDist = cpuSSSP(g); 
-  vector<int> omp_cpu_MinDist = cpuParSSSP(g);
+  // vector<int> omp_cpu_MinDist = cpuParSSSP(g); // mismatch
+  int* omp_cpu_MinDist = cpuParSSSP(g);
   
   // GPU SSSP
   // int* gpu_MinDist = gpuSSSP(g);
   
   printf("dij == fpt_omp\n");
-  verify0(g,fpt_cpu_MinDist,omp_cpu_MinDist);
+  verify2(g,fpt_cpu_MinDist,omp_cpu_MinDist);
   
   // printf("fptcpu == fptgpu\n");
   // verify2(g,omp_cpu_MinDist,gpu_MinDist);
