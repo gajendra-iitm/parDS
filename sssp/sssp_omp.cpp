@@ -460,7 +460,7 @@ void verify2(const ECLgraph& g, vector <int> &d1, int* d2){
   for (int j = 0; j < g.nodes; j++) {  
     if(d1[j] != d2[j]){
       misMatch++;
-      printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
+      // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
     }
     // if(j < 10)  
     // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]); // lets print only 10. //g.nodes
