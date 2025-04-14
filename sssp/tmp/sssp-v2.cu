@@ -1,7 +1,5 @@
-// g++ -O3 sssp_omp.cpp -o sssp_omp.out -fopenmp && ./sssp_omp.out inputs/USA-road-d.NY.egr
+// nvcc -o "sssp.out" "sssp.cu" -O3 -arch=native
 
-
-#include <atomic>
 #include <climits>
 #include <algorithm>
 #include <tuple>
@@ -10,7 +8,7 @@
 #include <sys/time.h>
 
 #include <stdio.h>
-#include <omp.h>
+#include <cuda.h>
 #include <iostream>
 #include <chrono>
 
@@ -18,6 +16,9 @@
 #include "ECLgraph.h"
 
 using namespace std;
+
+#define MAX_INT_IN_SHARED_PER_BLOCK 12288
+#define SH_REGS_PER_THREAD 12
 
 static const int Device = 0;
 static const int ThreadsPerBlock = 512;
@@ -31,16 +32,15 @@ struct CPUTimer {
   double stop() {end = std::chrono::high_resolution_clock::now(); std::chrono::duration<double> elapsed = end - beg; return elapsed.count();}
 };
 
-
-// static void CheckCuda(const int line)
-// {
-  // cudaError_t e;
-  // cudaDeviceSynchronize();
-  // if (cudaSuccess != (e = cudaGetLastError())) {
-    // fprintf(stderr, "CUDA error %d on line %d: %s\n", e, line, cudaGetErrorString(e));
-    // exit(-1);
-  // }
-// }
+static void CheckCuda(const int line)
+{
+  cudaError_t e;
+  cudaDeviceSynchronize();
+  if (cudaSuccess != (e = cudaGetLastError())) {
+    fprintf(stderr, "CUDA error %d on line %d: %s\n", e, line, cudaGetErrorString(e));
+    exit(-1);
+  }
+}
 
 
 
@@ -132,149 +132,6 @@ static vector<int> cpuSSSP(const ECLgraph& g){
   return minDist;
 }
 
-#include <omp.h>
-
-//Taking more time vs seq
-/*
-static vector<int> cpuParSSSP(const ECLgraph& g) {
-  vector<int> minDist(g.nodes, INT_MAX / 2);
-  vector<int> parent(g.nodes, -1);
-
-  int src = 0;
-  parent[src] = 0;
-  minDist[src] = 0;
-
-  CPUTimer timer;
-  timer.start();
-
-  bool modified;
-  int k = 0;
-
-  do {
-    modified = false;
-
-    // OpenMP: declare shared/firstprivate variables
-    #pragma omp parallel for schedule(dynamic)
-    for (int u = 0; u < g.nodes; u++) {
-      int local_modified = 0; // per-thread flag
-      for (int j = g.nindex[u]; j < g.nindex[u + 1]; j++) {
-        int w = g.eweight[j];
-        int v = g.nlist[j];
-        int newDist = minDist[u] + w;
-        if (newDist < minDist[v]) {
-          // atomic compare-and-swap style update
-          #pragma omp critical
-          {
-            if (newDist < minDist[v]) {
-              minDist[v] = newDist;
-              parent[v] = u;
-              modified = true;
-            }
-          }
-        }
-      }
-    }
-
-    k++;
-  } while (modified);
-
-  cout << k << " iterations of " << g.nodes - 1 << endl;
-  const double runtime = timer.stop();
-  printf("Fpt Par SSSP. Host: %12.9f s\n", runtime);
-
-  return minDist;
-}
-*/
-
-// from startplat util
-template<typename T>
-inline void atomicMin(T* targetVar, T update_val) { 
-  T oldVal, newVal;
-  do {
-    oldVal = *targetVar;
-    newVal = std::min(oldVal,update_val);
-    if (oldVal == newVal) 
-      break;
-  }while ( __sync_val_compare_and_swap(targetVar, oldVal, newVal) == false);
-}
-
-
-// from StarPlat
-
-static int* cpuParSSSP(const ECLgraph& g) {
-  // vector<int> minDist(g.nodes, INT_MAX / 2); //mininum distance
-  // vector<bool> modified(g.nodes, false);
-  // vector<bool> modified_nxt(g.nodes, false);
-  //vector<int> parent(g.nodes, -1);
-  
-  int* minDist=new int[g.nodes];
-  bool* modified=new bool[g.nodes];
-  bool* modified_nxt=new bool[g.nodes];
-  
-  CPUTimer timer;
-  timer.start();
-
-  
-  #pragma omp parallel for
-  for (int t = 0; t < g.nodes; t++) {
-    minDist[t] = INT_MAX;
-    modified[t] = false;
-    modified_nxt[t] = false;
-  }  
-
-  int src = 0;
-  // parent[src] = 0;
-  minDist[src] = 0;
-  modified[src] = true;
-
-  
-  bool finished;
-  int k = 0;
-
-  do {
-    finished = true;
-    #pragma omp parallel
-    {
-      #pragma omp for
-      for (int v = 0; v < g.nodes; v++) {
-        if(modified[v] == true ){
-          for (int edge = g.nindex[v]; edge < g.nindex[v+1]; edge++) { 
-            int nbr = g.nlist[edge] ;
-            int e = edge;
-            int dist_new = minDist[v] + g.eweight[e];
-            bool modified_new = true;
-            
-            if(minDist[nbr] > dist_new)  {
-              int oldValue = minDist[nbr];
-              atomicMin(&minDist[nbr],dist_new);
-             
-              if( oldValue > minDist[nbr]) {
-                modified_nxt[nbr] = modified_new;
-                finished = false ; 
-              }
-            }
-          }
-        }
-      }
-      #pragma omp for
-      for (int v = 0; v < g.nodes; v ++) { 
-        modified[v] =  modified_nxt[v] ;
-        modified_nxt[v] = false ;
-      }
-    }
-      
-    k++;
-  } while (!finished);
-
-  cout << k << " iterations of " << g.nodes - 1 << endl;
-  const double runtime = timer.stop();
-  printf("Fpt Par SSSP. Host: %12.9f s\n", runtime);
-
-  return minDist;
-}
-
-/*
-
 // INIT KERNEL
 __global__ void kernelInit(int N, int src, int *minDist, int* parent){
 	unsigned id = threadIdx.x + blockDim.x * blockIdx.x;	
@@ -311,7 +168,7 @@ __global__ void csrKernelBellmanFordMoore(int N, int M, const int *d_nindex, con
 					
 }
 
-// SSSP V4
+// SSSP V4 -  3 Push
 __global__ void csrKernelBellmanFordMoore2(int N, int M, const int *d_nindex, const int* d_nlist, const int* d_eweight,
 	bool *modified,
 	int *minDist, 
@@ -352,6 +209,96 @@ __global__ void csrKernelBellmanFordMoore2(int N, int M, const int *d_nindex, co
 					
 }
 
+// SSSP V5 -- 3 push + sh mem
+__global__ void csrKernelBellmanFordMoore3(int N, int M, const int *d_nindex, const int* d_nlist, const int* d_eweight,
+	bool *modified,
+	int *minDist, 
+  int *parent // not req
+  ){
+  __shared__ int shmem_nlist[MAX_INT_IN_SHARED_PER_BLOCK/2];
+  __shared__ int shmem_eweight[MAX_INT_IN_SHARED_PER_BLOCK/2];
+	unsigned id = threadIdx.x + blockDim.x * blockIdx.x;
+	if(id < N){	
+      
+    int i, j, v, w; 
+		int u = id;   
+		int start = d_nindex[u];
+		int end   = d_nindex[u+1];
+    int size  = end - start;
+    int minSize, newDist;
+    for (i = start, j = 0, minSize = (size < SH_REGS_PER_THREAD ? size : SH_REGS_PER_THREAD); i < end && j < minSize; ++i, ++j){
+			shmem_nlist  [threadIdx.x * SH_REGS_PER_THREAD + j] = d_nlist[i];
+			shmem_eweight[threadIdx.x * SH_REGS_PER_THREAD + j] = d_eweight[i];
+    }
+    for(int i=start, j=0; i< end; i++, j++){
+      if(j < SH_REGS_PER_THREAD){
+        v = shmem_nlist  [threadIdx.x * SH_REGS_PER_THREAD + j] ;
+        w = shmem_eweight[threadIdx.x * SH_REGS_PER_THREAD + j] ;
+      }
+      else{
+        v = d_nlist[i];
+        w = d_eweight[i];
+      }
+      /// relax
+			newDist =  minDist[u]+ w;
+			if(newDist < minDist[v]) { //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    for(int i=start, j=0; i< end; i++, j++){
+      if(j < SH_REGS_PER_THREAD){
+        v = shmem_nlist  [threadIdx.x * SH_REGS_PER_THREAD + j] ;
+        w = shmem_eweight[threadIdx.x * SH_REGS_PER_THREAD + j] ;
+      }
+      else{
+        v = d_nlist[i];
+        w = d_eweight[i];
+      }
+      /// relax
+			newDist =  minDist[u]+ w;
+			if(newDist < minDist[v]) { //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    for(int i=start, j=0; i< end; i++, j++){
+      if(j < SH_REGS_PER_THREAD){
+        v = shmem_nlist  [threadIdx.x * SH_REGS_PER_THREAD + j] ;
+        w = shmem_eweight[threadIdx.x * SH_REGS_PER_THREAD + j] ;
+      }
+      else{
+        v = d_nlist[i];
+        w = d_eweight[i];
+      }
+      /// relax
+			newDist =  minDist[u]+ w;
+			if(newDist < minDist[v]) { //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    for(int i=start, j=0; i< end; i++, j++){
+      if(j < SH_REGS_PER_THREAD){
+        v = shmem_nlist  [threadIdx.x * SH_REGS_PER_THREAD + j] ;
+        w = shmem_eweight[threadIdx.x * SH_REGS_PER_THREAD + j] ;
+      }
+      else{
+        v = d_nlist[i];
+        w = d_eweight[i];
+      }
+      /// relax
+			newDist =  minDist[u]+ w;
+			if(newDist < minDist[v]) { //To avoid conjection of atomic stmts
+				atomicMin(&minDist[v], newDist); 
+				*modified= true;
+			}
+		}
+    
+	}
+					
+}
+
 
 // GPU DRIVER SSSP
 static int* gpuSSSP(const ECLgraph& g){
@@ -384,8 +331,14 @@ static int* gpuSSSP(const ECLgraph& g){
   cudaMalloc((void**)&d_modified,   sizeof(bool));
   bool *modified = new bool[1];
   
-  CPUTimer timer;
-  timer.start();
+  // CPUTimer timer;
+  // timer.start();
+  
+  	// Create CUDA events for timing
+	cudaEvent_t gpu_start, gpu_stop;
+	cudaEventCreate(&gpu_start);
+	cudaEventCreate(&gpu_stop);
+  cudaEventRecord(gpu_start);
   
   int src = 0;
   int k = 0;
@@ -397,7 +350,7 @@ static int* gpuSSSP(const ECLgraph& g){
   do {
       modified[0] = false;
       cudaMemcpy(d_modified, modified, sizeof(bool), cudaMemcpyHostToDevice);
-      csrKernelBellmanFordMoore2<<<blocks, ThreadsPerBlock>>>( g.nodes, g.edges, d_nindex, d_nlist, d_eweight, //inputs
+      csrKernelBellmanFordMoore3<<<blocks, ThreadsPerBlock>>>( g.nodes, g.edges, d_nindex, d_nlist, d_eweight, //inputs
                                                        d_modified,                        // fixed pt var
                                                        d_minDist, d_parent                // these are outputs
                                                        );
@@ -411,9 +364,15 @@ static int* gpuSSSP(const ECLgraph& g){
   
   
   cudaDeviceSynchronize();
-  const double runtime = timer.stop();
-  printf("FPT GPU SSSP. DEV: %12.9f s\n", runtime);
-   
+  // const double runtime = timer.stop();
+  // printf("FPT GPU SSSP. DIVCE: %12.9f s\n", runtime);
+  cudaEventRecord(gpu_stop);
+	cudaEventSynchronize(gpu_stop);
+  
+  float gpu_time;	
+  cudaEventElapsedTime(&gpu_time, gpu_start, gpu_stop); // in ms
+  printf("FPT GPU SSSP. DIVCE: %12.9f s\n",  gpu_time/1000);
+ 
 
   cudaMemcpy(h_minDist, d_minDist, g.nodes * sizeof(int), cudaMemcpyDeviceToHost);
   CheckCuda(__LINE__);
@@ -427,19 +386,17 @@ static int* gpuSSSP(const ECLgraph& g){
   
   return h_minDist;
 }
-*/
+
 
 // d1 and d2 vec of int
 void verify0(const ECLgraph& g,  vector <int> &d1,vector <int> &d2){
 // void verify1(const ECLgraph& g, int* d1, int* d2){
-  int misMatch = 0;
-  cout << "N: " << g.nodes << endl;
-  for (int j = 0, end = g.nodes; j < end; j++) {  // lets print only 10.   //g.nodes
-    
+   int misMatch = 0;
+  
+  for (int j = 0; j < g.nodes; j++) {  // lets print only 10. //g.nodes
     if(d1[j] != d2[j]){
       misMatch++;
       printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
-      // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
     }
       
   }
@@ -456,7 +413,7 @@ void verify2(const ECLgraph& g, vector <int> &d1, int* d2){
   for (int j = 0; j < g.nodes; j++) {  
     if(d1[j] != d2[j]){
       misMatch++;
-      // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
+      printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]);
     }
     // if(j < 10)  
     // printf("d1[%d]=%d  !=  d2[%d]=%d\n", j,d1[j],j,d2[j]); // lets print only 10. //g.nodes
@@ -479,30 +436,28 @@ int main(int argc, char *argv[]){
   printf("avg degree: %.2f\n\n", 1.0 * g.edges / g.nodes);
 
   // get GPU info
-  // cudaSetDevice(Device);
-  // cudaDeviceProp deviceProp;
-  // cudaGetDeviceProperties(&deviceProp, Device);
-  // if ((deviceProp.major == 9999) && (deviceProp.minor == 9999)) {printf("ERROR: there is no CUDA capable device\n\n");  exit(-1);}
-  // const int SMs = deviceProp.multiProcessorCount;
-  // const int mTpSM = deviceProp.maxThreadsPerMultiProcessor;
-  // printf("GPU: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n\n", deviceProp.name, SMs, mTpSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);  fflush(stdout);
+  cudaSetDevice(Device);
+  cudaDeviceProp deviceProp;
+  cudaGetDeviceProperties(&deviceProp, Device);
+  if ((deviceProp.major == 9999) && (deviceProp.minor == 9999)) {printf("ERROR: there is no CUDA capable device\n\n");  exit(-1);}
+  const int SMs = deviceProp.multiProcessorCount;
+  const int mTpSM = deviceProp.maxThreadsPerMultiProcessor;
+  printf("GPU: %s with %d SMs and %d mTpSM (%.1f MHz and %.1f MHz)\n\n", deviceProp.name, SMs, mTpSM, deviceProp.clockRate * 0.001, deviceProp.memoryClockRate * 0.001);  fflush(stdout);
   //const int blocks = SMs * (mTpSM / ThreadsPerBlock);
   
   // Two diff CPU SSSP Implementation
-  vector<int> dij_cpu_MinDist = dijkstra(g); 
-  
-  vector<int> fpt_cpu_MinDist = cpuSSSP(g); 
-  // vector<int> omp_cpu_MinDist = cpuParSSSP(g); // mismatch
-  int* omp_cpu_MinDist = cpuParSSSP(g);
+  // int* dij_cpu_MinDist = cpuSSSP(g); // Seqfault
+  // vector<int> fpt_cpu_MinDist = cpuSSSP(g); 
+  vector<int> dij_cpu_MinDist = dijkstra(g);
   
   // GPU SSSP
-  // int* gpu_MinDist = gpuSSSP(g);
+  int* gpu_MinDist = gpuSSSP(g);
   
-  printf("dij == fpt_omp\n");
-  verify2(g,fpt_cpu_MinDist,omp_cpu_MinDist);
+  // printf("dij == fpt\n");
+  // verify0(g,dij_cpu_MinDist,fpt_cpu_MinDist);
   
-  // printf("fptcpu == fptgpu\n");
-  // verify2(g,omp_cpu_MinDist,gpu_MinDist);
+  printf("dijcpu == fptgpu\n");
+  verify2(g,dij_cpu_MinDist,gpu_MinDist);
   
   freeECLgraph(g);
   return 0;

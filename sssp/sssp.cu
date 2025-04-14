@@ -342,7 +342,7 @@ int main(int argc, char *argv[]){
   
   // Two diff CPU SSSP Implementation
   // int* dij_cpu_MinDist = cpuSSSP(g); // Seqfault
-  vector<int> fpt_cpu_MinDist = cpuSSSP(g); 
+  // vector<int> fpt_cpu_MinDist = cpuSSSP(g); 
   vector<int> dij_cpu_MinDist = dijkstra(g);
   
   // GPU SSSP
